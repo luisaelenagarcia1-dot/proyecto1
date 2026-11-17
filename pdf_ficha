@@ -1,0 +1,116 @@
+<?php
+session_start();
+require_once 'header.php';
+require_once 'conexion.php';
+
+// Consulta SQL corregida para incluir TODOS los campos necesarios
+$sql = "SELECT p.documento_identidad, p.nombre, p.apellido, p.fecha_detencion, 
+               c.nombre AS nombre_centro, 
+               a.nombre_area AS nombre_area,
+               cj.numero_expediente, cj.fecha_condena, cj.duracion_condena_dias
+        FROM privados p
+        LEFT JOIN centros c ON p.centro_codigo = c.codigo
+        LEFT JOIN areas_socioproductivas a ON p.area_codigo = a.codigo
+        LEFT JOIN privados_casos pc ON p.documento_identidad = pc.privado_documento
+        LEFT JOIN casos_judiciales cj ON pc.caso_expediente = cj.numero_expediente
+        ORDER BY p.apellido, p.nombre";
+
+$resultado = $conexion->query($sql);
+?>
+
+<main class="app-main">
+    <div class="app-content-header">
+        <div class="container-fluid">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <h3 class="mb-0">Listado de Privados de Libertad</h3>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <a href="generar_pdf_todos.php" target="_blank" class="btn btn-danger me-2"><i class="bi bi-file-earmark-pdf"></i> Lista PDF</a>
+                    <a href="privados_formulario.php" class="btn btn-primary">Registrar Nuevo</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-content">
+        <div class="container-fluid">
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Documento</th>
+                                    <th>Nombre Completo</th>
+                                    <th>Centro de Reclusión</th>
+                                    <th>Área Socioproductiva</th>
+                                    <th>Fecha Detención</th>
+                                    <th>Fecha Condena</th>
+                                    <th>Tiempo Condena</th>
+                                    <th>Tiempo Restante</th>
+                                    <th style="width: 120px;">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if ($resultado && $resultado->num_rows > 0): ?>
+                                    <?php while ($privado = $resultado->fetch_assoc()): ?>
+                                        <?php
+                                        // --- LÓGICA DE CÁLCULO DE TIEMPO ---
+                                        $totalDiasCondena = $privado['duracion_condena_dias'] ?? 0;
+                                        $aniosCondena = floor($totalDiasCondena / 365);
+                                        $mesesCondena = floor(($totalDiasCondena % 365) / 30);
+                                        $diasCondena = ($totalDiasCondena % 365) % 30;
+                                        $tiempoCondenaStr = "{$aniosCondena}a, {$mesesCondena}m, {$diasCondena}d";
+
+                                        $tiempoRestanteStr = 'N/A';
+                                        if (!empty($privado['fecha_detencion']) && $totalDiasCondena > 0) {
+                                            $fechaDetencion = new DateTime($privado['fecha_detencion']);
+                                            $fechaHoy = new DateTime();
+                                            $fechaFinCondena = (clone $fechaDetencion)->modify("+$totalDiasCondena days");
+
+                                            if ($fechaHoy >= $fechaFinCondena) {
+                                                $tiempoRestanteStr = '<span class="badge bg-success">Cumplida</span>';
+                                            } else {
+                                                $intervalo = $fechaHoy->diff($fechaFinCondena);
+                                                $tiempoRestanteStr = $intervalo->format('%ya, %mm, %dd');
+                                            }
+                                        }
+                                        ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($privado['documento_identidad']); ?></td>
+                                            <td><?php echo htmlspecialchars($privado['apellido'] . ', ' . $privado['nombre']); ?></td>
+                                            <td><?php echo htmlspecialchars($privado['nombre_centro'] ?? 'N/A'); ?></td>
+                                            <td><?php echo htmlspecialchars($privado['nombre_area'] ?? 'Sin asignar'); ?></td>
+                                            <td><?php echo !empty($privado['fecha_detencion']) ? date("d/m/Y", strtotime($privado['fecha_detencion'])) : 'N/A'; ?></td>
+                                            <td><?php echo !empty($privado['fecha_condena']) ? date("d/m/Y", strtotime($privado['fecha_condena'])) : 'N/A'; ?></td>
+                                            <td><?php echo $tiempoCondenaStr; ?></td>
+                                            <td><?php echo $tiempoRestanteStr; ?></td>
+                                            <td>
+                                                <a href="privados_gestionar.php?documento=<?php echo urlencode($privado['documento_identidad']); ?>" class="btn btn-sm btn-warning" title="Gestionar">
+                                                    <i class="bi bi-pencil-square"></i>
+                                                </a>
+                                                <a href="generar_pdf_ficha.php?documento=<?php echo urlencode($privado['documento_identidad']); ?>" target="_blank" class="btn btn-sm btn-info" title="Ficha PDF">
+                                                    <i class="bi bi-file-person"></i>
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    <?php endwhile; ?>
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="9" class="text-center">No se encontraron registros.</td>
+                                    </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<?php 
+$conexion->close();
+require_once 'footer.php'; 
+?>
